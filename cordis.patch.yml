@@ -1,0 +1,3 @@
+- insert:
+    - id: session-todos
+      name: '@local/dsh-session-todos'
