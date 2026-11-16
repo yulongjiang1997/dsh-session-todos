@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session to-dos",
+    "description": "Pre-store instructions in a composer popover, then send them into the current conversation."
+  }
+}
