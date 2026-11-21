@@ -11,24 +11,30 @@ async function main() {
   process.env.DSH_HOME = home
   try {
     const moduleUrl = pathToFileURL(join(__dirname, '..', 'index.js')).href
-    const { apply } = await import(moduleUrl)
+    const { apply, inject } = await import(moduleUrl)
+    assert.deepEqual(inject, ['webServer', 'connection'])
 
     let route
+    let refusal
     const webServer = {
       register(spec) {
         route = spec
         return () => {}
       },
     }
+    const connection = {
+      requestRejection() {
+        return refusal
+      },
+    }
     const ctx = {
       get(name) {
-        return name === 'webServer' ? webServer : undefined
+        if (name === 'webServer') return webServer
+        if (name === 'connection') return connection
+        return undefined
       },
       effect(callback) {
         return callback()
-      },
-      inject(_names, callback) {
-        callback({ webServer, effect: ctx.effect })
       },
     }
     apply(ctx)
@@ -59,6 +65,18 @@ async function main() {
     const empty = await request('GET')
     assert.equal(empty.status, 200)
     assert.deepEqual(JSON.parse(empty.body), { ok: true, todos: [] })
+
+    refusal = 401
+    const unauthorized = await request('GET')
+    assert.equal(unauthorized.status, 401)
+    assert.deepEqual(JSON.parse(unauthorized.body), { ok: false, error: 'unauthorized' })
+
+    refusal = 403
+    const forbidden = await request('POST', JSON.stringify({ todos: [] }))
+    assert.equal(forbidden.status, 403)
+    assert.deepEqual(JSON.parse(forbidden.body), { ok: false, error: 'forbidden' })
+
+    refusal = undefined
 
     const todo = {
       id: 't1',
