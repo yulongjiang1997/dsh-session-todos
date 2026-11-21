@@ -23,7 +23,7 @@
 
 待办按工作区归属：同一个工作区的会话共享这份清单，切换会话后弹窗自动显示该工作区的待办。
 
-## 持久化
+## 持久化与访问检查
 
 待办跨重启保留。DSH 的 Web 界面每次启动可能使用不同的本地端口，页面 `localStorage` 会变成新的空存储，所以：
 
@@ -31,10 +31,18 @@
 - Host 半边通过同源接口 `GET/POST /__dsh-session-todos/todos` 与页面同步；
 - 页面里的 `dsh.session.todos.v1` 只是同源缓存。
 
+`webServer.register` 的 exact 路由不经过 `/api` 的准入链路，因此每个请求都会先调用 `ctx.connection.requestRejection(request)`：
+
+- `403`：Host/Origin 不可信（跨站请求、DNS rebinding 等）；
+- `401`：没有有效的浏览器登录态；
+- `undefined`：放行，继续读写待办。
+
+Host 半边在 `inject` 中声明 `['webServer', 'connection']`，没有这两个服务时不会激活。
+
 ## 实现说明
 
 - `client.js`：输入框书签按钮、锚定弹窗、待办表单与列表，以及向当前会话发送（优先走 Client `Session.prompt`，保留本地回显）。
-- `index.js`：Host 半边，注册同源读写接口并落盘到 `$DSH_HOME`。
+- `index.js`：Host 半边，先做 `requestRejection` 访问检查，再注册同源读写接口并落盘到 `$DSH_HOME`。
 - `cordis.patch.yml`：插入插件行。
 - `locale/*.json`、`icon.svg`：插件管理中的标题、说明与图标。
 - `test/host.test.cjs`、`test/client.test.cjs`：无浏览器环境下的 Host 持久化、纯函数与 Slot 注册冒烟测试。
