@@ -8,6 +8,10 @@
  *
  *   GET  /__dsh-session-todos/todos  -> { ok, todos }
  *   POST /__dsh-session-todos/todos  -> { ok } for { todos }
+ *
+ * Exact routes bypass the /api admission path, so every request first passes
+ * `connection.requestRejection()`: 403 for an untrusted Host/Origin, 401 for a
+ * request without an authenticated browser session, undefined to proceed.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -128,12 +132,23 @@ function readBody(request, limit = MAX_BODY_BYTES) {
   })
 }
 
-function registerRoutes(webServer, ctx) {
+function registerRoutes(webServer, connection, ctx) {
   ctx.effect(() =>
     webServer.register({
       kind: 'exact',
       path: ROUTE,
       handler: async (request, response) => {
+        // Exact routes installed here bypass the /api admission path; apply the
+        // same Host/Origin and browser-session fence before touching any data.
+        // 403 = untrusted Host/Origin, 401 = no authenticated browser session.
+        const refused = connection.requestRejection(request)
+        if (refused !== undefined) {
+          sendJson(response, refused, {
+            ok: false,
+            error: refused === 401 ? 'unauthorized' : 'forbidden',
+          })
+          return
+        }
         if (request.method === 'GET') {
           sendJson(response, 200, { ok: true, todos: readTodos() })
           return
@@ -157,13 +172,14 @@ function registerRoutes(webServer, ctx) {
   )
 }
 
+export const inject = ['webServer', 'connection']
+
 export function apply(ctx) {
   const webServer = ctx.get('webServer')
-  if (webServer !== undefined) {
-    registerRoutes(webServer, ctx)
+  const connection = ctx.get('connection')
+  if (webServer === undefined || connection === undefined) {
+    console.warn('session-todos: webServer or connection service is unavailable')
     return
   }
-  ctx.inject(['webServer'], (scoped) => {
-    registerRoutes(scoped.webServer, scoped)
-  })
+  registerRoutes(webServer, connection, ctx)
 }
